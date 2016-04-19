@@ -1,0 +1,85 @@
+#include "Data.h"
+#include "MyModel.h"
+#include "DNest4/code/DNest4.h"
+#include <iostream>
+
+
+using namespace std;
+using namespace DNest4;
+
+MyModel::MyModel(int nparams)
+:params(nparams) //Temporarily using 20, will need to change based on resolution
+{
+
+}
+
+void MyModel::calculate_mvis()
+{
+	const auto& rho = Data::get_instance().get_rho(); //Rho or u,v?
+	mvis = 0.; //Input discretemodel stuff here(Does mu size need declaring?)
+}
+
+void MyModel::from_prior(RNG& rng)
+{
+	for(size_t i=0; i<params.size(); i++)
+	{
+		params[i] = (-0.2 + 0.4*rng.rand());//*meanguess[i];
+		fprintf(stderr, "%e\n", params[i]);
+		//Need to input the meanguess!
+		//Also need to manage the cases where below the resolution AND/OR add power law
+	}
+	//calculate_mvis();
+}
+
+double MyModel::perturb(RNG& rng)
+{
+	int which = rng.rand_int(params.size()); //Which params to move
+	params[which] += rng.randh();
+	wrap(params[which], 0., 1.);//meanguess[which]); //Does this need to be in a for loop?
+
+	calculate_mvis();
+
+	double logH = 0.; //Leaving as 0 since using uniform priors
+	return logH;
+}
+
+double MyModel::log_likelihood() const
+{
+//Enforce positive surface brightness
+//(Do I still need to do this? Or is this taken care above?)
+
+//Calculate penalty
+	valarray<double> priori, qq(10);
+	double prior = 0.; //something with adjacent_difference?
+	qq[0]=0.;
+	for (int j=1; j<10; j++)
+	{
+		qq[j] = j*1.1;
+		priori[j] =qq[j]-qq[j-1];
+		fprintf(stderr, "%d %e %e", j, qq[j], priori[j]);
+	}
+	//	std::adjacent_difference(qq.begin(), qq.end(), priori.begin());
+	//for(std::valarray<double>::iterator it=priori.begin(); it < priori.end(); ++it)
+	//  fprintf(stderr, "%e", *it);
+
+//Chi^2, compared to both component of vis and the weights
+
+
+// Grab the values from the dataset
+	const auto& dvis = Data::get_instance().get_dvis();
+	const auto& dwgt = Data::get_instance().get_dwgt();
+
+	double chi2 = (dwgt*pow(mvis-dvis,2.)).sum();
+
+	return -0.5*(chi2 +prior);
+}
+
+void MyModel::print(std::ostream& out) const
+{
+
+}
+
+string MyModel::description() const
+{
+	return string("");
+}
