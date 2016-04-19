@@ -14,16 +14,34 @@ using namespace DNest4;
 
 MyModel::MyModel()
 :params(Data::get_instance().get_rsb().size()),
-mvis(Data::get_instance().get_rho().size())
+mvis(Data::get_instance().get_rho().size()),
+jinc(Data::get_instance().get_rho().size()*Data::get_instance().get_binedge().size())
 //sbmean(Data::get_instance().get_sbmean())
 {
 
 }
 
+void MyModel::calculate_jinc()
+{
+	const auto& rho = Data::get_instance().get_rho(); //Change to u,v as needed
+	const auto& rbin = Data::get_instance().get_binedge(); //nbins+1 size
+	int n = rbin.size();
+
+	for(size_t j=0; j<rho.size(); j++)
+	{
+		for (size_t i=0; i<rbin.size(); i++)
+		{
+			double theta = 2.*M_PI*rbin[i]*rho[j];
+			jinc[j*n+i] = gsl_sf_bessel_J1 (theta) / theta; //jinc[i][j]
+		}
+	}
+}
 void MyModel::calculate_mvis()
 {
 	const auto& rho = Data::get_instance().get_rho(); //Change to u,v as needed
 	const auto& rbin = Data::get_instance().get_binedge(); //nbins+1 size
+	int n = rbin.size();
+
 	//NOW in DATA.cpp - FIX! double rin = 0.001/140.; //Change to a variable
 	//rbin[0] = rin;
 
@@ -43,15 +61,17 @@ void MyModel::calculate_mvis()
 	wdiff[0] = -params[0];
 	wdiff[params.size()] = params[params.size()-1];
 
+	 //theta = 2.*M_PI*rbin*rho;
+
 	for(size_t j=0; j<rho.size(); j++)
 	{
 		mvis[j]=0;
 		for (size_t i=0; i<rbin.size(); i++)
 		{
 			//fprintf(stderr, "i: %zu Wdiff is %e \n", i, wdiff[i]);
-			double theta = 2.*M_PI*rbin[i]*rho[j];
-			double jinc = gsl_sf_bessel_J1 (theta) / theta; //jinc[i][j]
-			mvis[j] += 2.*M_PI*rbin[i]*rbin[i]*jinc*wdiff[i]; //Need to be sum or dot prod
+			// double theta = 2.*M_PI*rbin[i]*rho[j];
+			// double jinc = gsl_sf_bessel_J1 (theta) / theta; //jinc[i][j]
+			mvis[j] += 2.*M_PI*rbin[i]*rbin[i]*jinc[j*n+i]*wdiff[i]; //Need to be sum or dot prod
 			//if (!isfinite(mvis[j]))	fprintf(stderr, "i: %zu j: %zu: mvis: %e \n", i, j, mvis[j]);
 			//if (j ==22) fprintf(stderr, "%zu: wdiff: %f rbin: %e theta = %e jinc = %e \n", j, wdiff[i], rbin[i], theta, jinc);
 		}
@@ -81,16 +101,17 @@ void MyModel::from_prior(RNG& rng)
 
 	for(size_t i=0; i<params.size(); i++)
 	{
-		if (i>=belowres)
+		if ((int) i>=belowres)
 		{
-			params[i] = sbmean[i];//10.*rng.rand()*
+			params[i] = sbmean[i]*10.*rng.rand();
 		} else {
-			params[i] = sbmean[i]*(1.+2.*rng.rand());
+			params[i] = sbmean[i] *(1.+2.*rng.rand());
 		}
 		fprintf(stderr, "i:%zu SB:%f Param:%f Factor: %f \n", i, sbmean[i], params[i], params[i]/sbmean[i]);
 
 		//Also need to manage the cases where below the resolution AND/OR add power law
 	}
+	calculate_jinc();
 	calculate_mvis();
 }
 
@@ -99,7 +120,12 @@ double MyModel::perturb(RNG& rng)
 	const auto& sbmean = Data::get_instance().get_sbmean();
 	int which = rng.rand_int(params.size()); //Which params to move
 	params[which] += rng.randh();
-	wrap(params[which], 0., 3.*sbmean[which]); //Does this need to be in a for loop?
+	if (which >=belowres)
+	{
+		wrap(params[which], 0., 3.*sbmean[which]); //Does this need to be in a for loop?
+	} else {
+		wrap(params[which], sbmean[which], 3.*sbmean[which]);
+	}
 
 	//fprintf(stderr, "which: %d, param: %f \n", which, params[which]);
 	calculate_mvis();
@@ -150,7 +176,7 @@ double MyModel::log_likelihood() const
 	double chi2 = (dwgt*pow(mvis-dvis,2.)).sum();
 	double prior = nturns * 2.*dvis.size()/params.size();
 
-	fprintf(stderr, "Turns: %d Prior: %e Chi2: %e \n", nturns, prior, chi2);
+	//fprintf(stderr, "Turns: %d Prior: %e Chi2: %e \n", nturns, prior, chi2);
 	return -0.5*(chi2 +prior);
 }
 

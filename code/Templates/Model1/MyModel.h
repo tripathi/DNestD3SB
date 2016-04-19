@@ -18,8 +18,12 @@ class MyModel
 		//Number of bins below resolution
 		int belowres;
 
+		//Calculation of modified u,v
+		std::valarray<double> jinc;
+
 		//Compute the model visibilities given the bin weights
 		void calculate_mvis();
+		void calculate_jinc();
 
 	public:
 		// Constructor only gives size of params
